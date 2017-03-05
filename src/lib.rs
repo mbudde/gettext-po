@@ -32,12 +32,16 @@ pub struct Entry {
     pub msgid: String,
     pub msgstr: String,
     pub comments: Vec<Comment>,
+    pub obsolete: bool,
 }
 
-fn write_multiline_str(f: &mut fmt::Formatter, s: &str) -> Result<(), fmt::Error> {
+fn write_multiline_str(f: &mut fmt::Formatter, s: &str, obsolete: bool) -> Result<(), fmt::Error> {
     if s.contains('\n') {
         write!(f, "\"\"\n")?;
         for line in s.split('\n') {
+            if obsolete {
+                write!(f, "#~ ")?;
+            }
             write!(f, "{:?}\n", line)?;
         }
     } else {
@@ -51,10 +55,16 @@ impl Display for Entry {
         for comment in &self.comments {
             write!(f, "{}\n", comment)?;
         }
+        if self.obsolete {
+            write!(f, "#~ ")?;
+        }
         write!(f, "msgid ")?;
-        write_multiline_str(f, &self.msgid)?;
+        write_multiline_str(f, &self.msgid, self.obsolete)?;
+        if self.obsolete {
+            write!(f, "#~ ")?;
+        }
         write!(f, "msgstr ")?;
-        write_multiline_str(f, &self.msgstr)
+        write_multiline_str(f, &self.msgstr, self.obsolete)
     }
 }
 
@@ -97,8 +107,8 @@ fn multiline_str<I>(input: I) -> ParseResult<String, I>
         .parse_stream(input)
 }
 
-fn comments<I>(input: I) -> ParseResult<Vec<Comment>, I>
-    where I: Stream<Item=u8>
+fn comments<'a, I>(input: I) -> ParseResult<Vec<Comment>, I>
+    where I: Stream<Item=u8, Range=&'a [u8]>
 {
     let ws = || satisfy(|b| b == b' ' || b == b'\t');
     let many_ws = || skip_many(ws());
@@ -114,11 +124,9 @@ fn comments<I>(input: I) -> ParseResult<Vec<Comment>, I>
     let flags = token(b',')
         .skip(many_ws())
         .with(many(word().skip(many_ws())));
-        // .with(sep_end_by(word(), many_ws()));
     let references = token(b':')
         .skip(many_ws())
         .with(many(word().skip(many_ws())));
-        // .with(sep_end_by(word(), many_ws()));
     let translator = optional(token(b'.'))
         .and(optional(token(b' ')).with(rest_of_line()))
         .map(|(extracted, s)| {
@@ -128,35 +136,62 @@ fn comments<I>(input: I) -> ParseResult<Vec<Comment>, I>
                 Comment::Translator(s)
             }
         });
+    let comment = try(optional(try(bytes(b"#~")).skip(many_ws())).and(token(b'#')))
+        .with(
+            choice! {
+                flags.map(Comment::Flags),
+                references.map(Comment::References),
+                translator
+            }
+        )
+        .skip(newline().skip(spaces()));
 
-    let comment = token(b'#').with(
-        choice! {
-            flags.map(Comment::Flags),
-            references.map(Comment::References),
-            translator
-        }
-    ).skip(newline().skip(spaces()));
-    many(comment).parse_stream(input)
+    many(comment)
+        .map(|mut comments: Vec<Comment>| {
+            comments.sort_by_key(|c| {
+                match *c {
+                    Comment::Translator(_) => 1,
+                    Comment::Extracted(_)  => 2,
+                    Comment::References(_) => 3,
+                    Comment::Flags(_)      => 4,
+                }
+            });
+            comments
+        })
+        .parse_stream(input)
+}
+
+fn obsolete<'a, I>(input: I) -> ParseResult<bool, I>
+    where I: Stream<Item=u8, Range=&'a [u8]>
+{
+    optional(
+        try(bytes(b"#~")
+            .skip(skip_many(satisfy(|b| b == b' ' || b == b'\t'))))
+        )
+        .map(|opt| opt.is_some())
+        .parse_stream(input)
 }
 
 pub fn entry<'a, I>(input: I) -> ParseResult<Entry, I>
     where I: Stream<Item=u8, Range=&'a [u8]>
 {
+    let section = |tag| {
+        parser(obsolete)
+            .skip(bytes(tag))
+            .skip(skip_many1(space()))
+            .and(parser(multiline_str))
+    };
 
-    let msgid = bytes(b"msgid")
-        .skip(skip_many1(space()))
-        .with(parser(multiline_str));
-
-    let msgstr = bytes(b"msgstr")
-        .skip(skip_many1(space()))
-        .with(parser(multiline_str));
+    let msgid = section(b"msgid");
+    let msgstr = section(b"msgstr");
 
     (spaces(), parser(comments), msgid, spaces(), msgstr)
-        .map(|(_, comments, msgid, _, msgstr)| {
+        .map(|(_, comments, (obs, msgid), _, (obs2, msgstr))| {
             Entry {
                 msgid: msgid,
                 msgstr: msgstr,
                 comments: comments,
+                obsolete: obs || obs2,
             }
         })
         .parse_stream(input)
@@ -165,7 +200,9 @@ pub fn entry<'a, I>(input: I) -> ParseResult<Entry, I>
 pub fn entries<'a, I>(input: I) -> ParseResult<Vec<Entry>, I>
     where I: Stream<Item=u8, Range=&'a [u8]>
 {
-    sep_end_by(parser(entry), newline().and(spaces())).parse_stream(input)
+    sep_end_by(parser(entry), newline().and(spaces()))
+        .skip(eof())
+        .parse_stream(input)
 }
 
 
@@ -202,6 +239,7 @@ mod tests {
             msgid: "fo\"ob\nar".to_string(),
             msgstr: "".to_string(),
             comments: vec![],
+            obsolete: false,
         };
         assert_eq!(res, Ok((exp, &[][..])));
     }
@@ -217,6 +255,7 @@ mod tests {
             msgid: "foobar".to_string(),
             msgstr: "".to_string(),
             comments: vec![],
+            obsolete: false,
         };
         assert_eq!(res, Ok((exp, &[][..])));
     }
@@ -235,6 +274,7 @@ mod tests {
         let exp = Entry {
             msgid: "".to_string(),
             msgstr: "".to_string(),
+            obsolete: false,
             comments: vec![
                 Comment::Translator("a comment".to_string()),
                 Comment::Translator(" another comment   ".to_string()),
@@ -244,6 +284,27 @@ mod tests {
             ],
         };
         assert_eq!(res, Ok((exp, &[][..])));
+    }
 
+    #[test]
+    fn test_obsolete() {
+        let res = parser(entry)
+            .parse("\
+            #~ # a\n\
+            #~# b\n\
+            # c\n\
+            #~ msgid \"\"\n\
+            #~ msgstr \"\"".as_bytes());
+        let exp = Entry {
+            msgid: "".to_string(),
+            msgstr: "".to_string(),
+            obsolete: true,
+            comments: vec![
+                Comment::Translator("a".to_string()),
+                Comment::Translator("b".to_string()),
+                Comment::Translator("c".to_string()),
+            ],
+        };
+        assert_eq!(res, Ok((exp, &[][..])));
     }
 }
