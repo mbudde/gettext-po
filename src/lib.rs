@@ -43,6 +43,7 @@ impl Display for Comment {
 
 #[derive(Debug, PartialEq)]
 pub struct Entry {
+    pub msgctxt: Option<String>,
     pub translation: Translation,
     pub comments: Vec<Comment>,
     pub obsolete: bool,
@@ -78,6 +79,10 @@ impl Display for Entry {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         for comment in &self.comments {
             write!(f, "{}\n", comment)?;
+        }
+        if let Some(ref msgctxt) = self.msgctxt {
+            write_obsolete!(self, f, "msgctxt ")?;
+            write_multiline_str(f, msgctxt, self.obsolete)?;
         }
         match self.translation {
             Translation::Singular { ref msgid, ref msgstr } => {
@@ -270,11 +275,16 @@ fn translation<'a, I>(input: I) -> ParseResult<(bool, Translation), I>
 pub fn entry<'a, I>(input: I) -> ParseResult<Entry, I>
     where I: Stream<Item=u8, Range=&'a [u8]>
 {
+    let msgctxt = try(parser(obsolete).skip(try(bytes(b"msgctxt"))))
+        .skip(skip_many1(space()))
+        .with(parser(multiline_str))
+        .skip(newline());
 
-    (spaces(), parser(comments), parser(translation))
-        .map(|(_, comments, (obs, trans))| {
+    (spaces(), parser(comments), optional(msgctxt), parser(translation))
+        .map(|(_, comments, msgctxt, (obs, trans))| {
             Entry {
                 translation: trans,
+                msgctxt: msgctxt,
                 comments: comments,
                 obsolete: obs,
             }
