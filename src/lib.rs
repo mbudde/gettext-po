@@ -1,9 +1,6 @@
-#![allow(unused_imports)]
-
 #[macro_use]
 extern crate combine;
 use std::fmt::{self, Display, Write};
-use std::str::from_utf8;
 use combine::parser;
 use combine::combinator::*;
 use combine::byte::*;
