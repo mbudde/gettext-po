@@ -139,11 +139,6 @@ impl Display for Entry {
     }
 }
 
-/// ```bnf
-/// quoted_str = '"' str_char '"'
-/// str_char   = escape | char
-/// escape     = "\n" | '\"' | "\\"
-/// ```
 fn quoted_str<I>(input: I) -> ParseResult<String, I>
     where I: Stream<Item=u8>
 {
@@ -168,9 +163,6 @@ fn quoted_str<I>(input: I) -> ParseResult<String, I>
     quoted_str.parse_stream(input)
 }
 
-/// ```bnf
-/// multiline_str = quoted_str *( newlquoted_str )
-/// ```
 fn multiline_str<I>(input: I) -> ParseResult<String, I>
     where I: Stream<Item=u8>
 {
@@ -297,12 +289,6 @@ fn translation<'a, I>(input: I) -> ParseResult<(bool, Translation), I>
             )
             .map(move |t| (obs, t))
     }).parse_stream(input)
-
-    // (msgid, spaces(), msgstr)
-        // .map(|(((obs, _), msgid), _, ((obs2, _), msgstr))| {
-            // (obs || obs2, Translation::Singular { msgid: msgid, msgstr: msgstr })
-        // })
-        // .parse_stream(input)
 }
 
 pub fn entry<'a, I>(input: I) -> ParseResult<Entry, I>
