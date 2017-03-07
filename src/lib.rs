@@ -2,7 +2,7 @@
 
 #[macro_use]
 extern crate combine;
-use std::fmt::{self, Display};
+use std::fmt::{self, Display, Write};
 use std::str::from_utf8;
 use combine::parser;
 use combine::combinator::*;
@@ -33,7 +33,9 @@ pub enum Comment {
 impl Display for Comment {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
-            Comment::Translator(ref s) => write!(f, "# {}", s),
+            Comment::Translator(ref s) => {
+                if s.is_empty() { write!(f, "#") } else { write!(f, "# {}", s) }
+            }
             Comment::Extracted(ref s)  => write!(f, "#. {}", s),
             Comment::References(ref s) => write!(f, "#: {}", s.join(" ")),
             Comment::Flags(ref s)      => write!(f, "#, {}", s.join(" ")),
@@ -49,17 +51,48 @@ pub struct Entry {
     pub obsolete: bool,
 }
 
+fn write_quoted_str(f: &mut fmt::Formatter, s: &str) -> Result<(), fmt::Error> {
+    f.write_char('"')?;
+    let mut from = 0;
+    for (i, c) in s.char_indices() {
+        let esc = match c {
+            '"' => Some("\\\""),
+            '\n' => Some("\\n"),
+            '\\' => Some("\\\\"),
+            _ => None,
+        };
+        if let Some(esc) = esc {
+            f.write_str(&s[from..i])?;
+            f.write_str(esc)?;
+            from = i + c.len_utf8();
+        }
+    }
+    f.write_str(&s[from..])?;
+    f.write_char('"')
+}
+
 fn write_multiline_str(f: &mut fmt::Formatter, s: &str, obsolete: bool) -> Result<(), fmt::Error> {
     if s.contains('\n') {
         write!(f, "\"\"\n")?;
-        for line in s.split('\n') {
+
+        let mut from = 0;
+        for (i, _) in s.match_indices('\n') {
             if obsolete {
-                write!(f, "#~ ")?;
+                f.write_str("#~ ")?;
             }
-            write!(f, "{:?}\n", line)?;
+            if i > from || i + 1 <= s.len() {
+                write_quoted_str(f, &s[from..i+1])?;
+                f.write_char('\n')?;
+            }
+            from = i + 1;
+        }
+        if from < s.len() {
+            write_quoted_str(f, &s[from..])?;
+            f.write_char('\n')?;
         }
     } else {
-        write!(f, "{:?}\n", s)?;
+        write_quoted_str(f, s)?;
+        f.write_char('\n')?;
     }
     Ok(())
 }
