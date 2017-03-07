@@ -12,7 +12,8 @@ fn main() {
     let result = gettext_po::entries(State::new(&content[..]));
 
     match result {
-        Ok((entries, _)) => {
+        Ok((mut entries, _)) => {
+            entries.sort_by_key(|e| e.obsolete as u8);
             let mut first = true;
             for entry in entries {
                 if !first {

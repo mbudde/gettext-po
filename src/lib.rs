@@ -3,10 +3,24 @@
 #[macro_use]
 extern crate combine;
 use std::fmt::{self, Display};
+use std::str::from_utf8;
 use combine::parser;
 use combine::combinator::*;
-use combine::byte::{space, spaces, bytes, newline};
+use combine::byte::*;
 use combine::primitives::{Stream, ParseResult, Parser};
+
+#[derive(Debug, PartialEq)]
+pub enum Translation {
+    Singular {
+        msgid: String,
+        msgstr: String,
+    },
+    Plural {
+        msgid: String,
+        msgid_plural: String,
+        msgstr: Vec<(u32, String)>,
+    }
+}
 
 #[derive(Debug, PartialEq)]
 pub enum Comment {
@@ -29,8 +43,7 @@ impl Display for Comment {
 
 #[derive(Debug, PartialEq)]
 pub struct Entry {
-    pub msgid: String,
-    pub msgstr: String,
+    pub translation: Translation,
     pub comments: Vec<Comment>,
     pub obsolete: bool,
 }
@@ -50,21 +63,41 @@ fn write_multiline_str(f: &mut fmt::Formatter, s: &str, obsolete: bool) -> Resul
     Ok(())
 }
 
+macro_rules! write_obsolete {
+    ( $x:ident, $f:ident, $( $arg:expr ),* ) => {
+        {
+            if $x.obsolete {
+                write!($f, "#~ ")?;
+            }
+            write!($f, $($arg),*)
+        }
+    }
+}
+
 impl Display for Entry {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         for comment in &self.comments {
             write!(f, "{}\n", comment)?;
         }
-        if self.obsolete {
-            write!(f, "#~ ")?;
+        match self.translation {
+            Translation::Singular { ref msgid, ref msgstr } => {
+                write_obsolete!(self, f, "msgid ")?;
+                write_multiline_str(f, msgid, self.obsolete)?;
+                write_obsolete!(self, f, "msgstr ")?;
+                write_multiline_str(f, msgstr, self.obsolete)
+            }
+            Translation::Plural { ref msgid, ref msgid_plural, ref msgstr } => {
+                write_obsolete!(self, f, "msgid ")?;
+                write_multiline_str(f, msgid, self.obsolete)?;
+                write_obsolete!(self, f, "msgid_plural ")?;
+                write_multiline_str(f, msgid_plural, self.obsolete)?;
+                for &(i, ref msg) in msgstr {
+                    write_obsolete!(self, f, "msgstr[{}] ", i)?;
+                    write_multiline_str(f, msg, self.obsolete)?;
+                }
+                Ok(())
+            }
         }
-        write!(f, "msgid ")?;
-        write_multiline_str(f, &self.msgid, self.obsolete)?;
-        if self.obsolete {
-            write!(f, "#~ ")?;
-        }
-        write!(f, "msgstr ")?;
-        write_multiline_str(f, &self.msgstr, self.obsolete)
     }
 }
 
@@ -172,26 +205,78 @@ fn obsolete<'a, I>(input: I) -> ParseResult<bool, I>
         .parse_stream(input)
 }
 
-pub fn entry<'a, I>(input: I) -> ParseResult<Entry, I>
+fn translation<'a, I>(input: I) -> ParseResult<(bool, Translation), I>
     where I: Stream<Item=u8, Range=&'a [u8]>
 {
-    let section = |tag| {
+    let section = |keyword| {
         parser(obsolete)
-            .skip(bytes(tag))
+            .and(keyword)
             .skip(skip_many1(space()))
             .and(parser(multiline_str))
     };
 
-    let msgid = section(b"msgid");
-    let msgstr = section(b"msgstr");
+    let msgid = section(bytes(b"msgid")).skip(newline());
 
-    (spaces(), parser(comments), msgid, spaces(), msgstr)
-        .map(|(_, comments, (obs, msgid), _, (obs2, msgstr))| {
+    msgid.then(move |((obs, _), msgid)| {
+        let msgid_plural = try(parser(obsolete).and(bytes(b"msgid_plural")))
+            .skip(skip_many1(space()))
+            .and(parser(multiline_str))
+            .skip(newline());
+
+        let msgstr_plural = parser(obsolete)
+            .and(
+                bytes(b"msgstr")
+                    .with(
+                        between(
+                            token(b'[') , token(b']'),
+                            many1(digit())
+                                .and_then(|s| String::from_utf8(s))
+                                .and_then(|s| s.parse())))
+            )
+            .skip(skip_many1(space()))
+            .and(parser(multiline_str))
+            .skip(newline())
+            .map(|((_, n), s)| (n, s));
+
+        let msgstr = section(bytes(b"msgstr"));
+
+        let msgid2 = msgid.clone();
+        msgid_plural.and(many1(msgstr_plural))
+            .map(move |(msgid_plural, msgstr_plurals)| {
+                Translation::Plural {
+                    msgid: msgid.clone(),
+                    msgid_plural: msgid_plural.1,
+                    msgstr: msgstr_plurals,
+                }
+            })
+            .or(
+                msgstr.map(move |(_, msgstr)| {
+                    Translation::Singular {
+                        msgid: msgid2.clone(),
+                        msgstr: msgstr,
+                    }
+                })
+            )
+            .map(move |t| (obs, t))
+    }).parse_stream(input)
+
+    // (msgid, spaces(), msgstr)
+        // .map(|(((obs, _), msgid), _, ((obs2, _), msgstr))| {
+            // (obs || obs2, Translation::Singular { msgid: msgid, msgstr: msgstr })
+        // })
+        // .parse_stream(input)
+}
+
+pub fn entry<'a, I>(input: I) -> ParseResult<Entry, I>
+    where I: Stream<Item=u8, Range=&'a [u8]>
+{
+
+    (spaces(), parser(comments), parser(translation))
+        .map(|(_, comments, (obs, trans))| {
             Entry {
-                msgid: msgid,
-                msgstr: msgstr,
+                translation: trans,
                 comments: comments,
-                obsolete: obs || obs2,
+                obsolete: obs,
             }
         })
         .parse_stream(input)
@@ -233,11 +318,10 @@ mod tests {
     #[test]
     fn escapes() {
         let res = parser(entry)
-            .parse("msgid   \"fo\\\"ob\\nar\"\n
+            .parse("msgid   \"fo\\\"ob\\nar\"\n\
                     msgstr \"\"".as_bytes());
         let exp = Entry {
-            msgid: "fo\"ob\nar".to_string(),
-            msgstr: "".to_string(),
+            translation: Translation::Singular { msgid: "fo\"ob\nar".to_string(), msgstr: "".to_string() },
             comments: vec![],
             obsolete: false,
         };
@@ -252,8 +336,7 @@ mod tests {
                    \"bar\"\n\
                    msgstr \"\"".as_bytes());
         let exp = Entry {
-            msgid: "foobar".to_string(),
-            msgstr: "".to_string(),
+            translation: Translation::Singular { msgid: "foobar".to_string(), msgstr: "".to_string() },
             comments: vec![],
             obsolete: false,
         };
@@ -272,8 +355,7 @@ mod tests {
             msgid \"\"\n\
             msgstr \"\"".as_bytes());
         let exp = Entry {
-            msgid: "".to_string(),
-            msgstr: "".to_string(),
+            translation: Translation::Singular { msgid: "".to_string(), msgstr: "".to_string() },
             obsolete: false,
             comments: vec![
                 Comment::Translator("a comment".to_string()),
@@ -296,8 +378,7 @@ mod tests {
             #~ msgid \"\"\n\
             #~ msgstr \"\"".as_bytes());
         let exp = Entry {
-            msgid: "".to_string(),
-            msgstr: "".to_string(),
+            translation: Translation::Singular { msgid: "".to_string(), msgstr: "".to_string() },
             obsolete: true,
             comments: vec![
                 Comment::Translator("a".to_string()),
