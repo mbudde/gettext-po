@@ -216,6 +216,7 @@ mod tests {
             .parse("msgid   \"fo\\\"ob\\nar\"\n\
                     msgstr \"\"".as_bytes());
         let exp = Entry {
+            msgctxt: None,
             translation: Translation::Singular { msgid: "fo\"ob\nar".to_string(), msgstr: "".to_string() },
             comments: vec![],
             obsolete: false,
@@ -231,6 +232,7 @@ mod tests {
                    \"bar\"\n\
                    msgstr \"\"".as_bytes());
         let exp = Entry {
+            msgctxt: None,
             translation: Translation::Singular { msgid: "foobar".to_string(), msgstr: "".to_string() },
             comments: vec![],
             obsolete: false,
@@ -250,6 +252,7 @@ mod tests {
             msgid \"\"\n\
             msgstr \"\"".as_bytes());
         let exp = Entry {
+            msgctxt: None,
             translation: Translation::Singular { msgid: "".to_string(), msgstr: "".to_string() },
             obsolete: false,
             comments: vec![
@@ -273,6 +276,7 @@ mod tests {
             #~ msgid \"\"\n\
             #~ msgstr \"\"".as_bytes());
         let exp = Entry {
+            msgctxt: None,
             translation: Translation::Singular { msgid: "".to_string(), msgstr: "".to_string() },
             obsolete: true,
             comments: vec![
