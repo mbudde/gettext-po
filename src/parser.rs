@@ -101,7 +101,7 @@ fn obsolete<'a, I>(input: I) -> ParseResult<bool, I>
         .parse_stream(input)
 }
 
-fn translation<'a, I>(input: I) -> ParseResult<(bool, Translation), I>
+fn translation<'a, I>(input: I) -> ParseResult<(bool, String, Translation), I>
     where I: Stream<Item=u8, Range=&'a [u8]>
 {
     let section = |keyword| {
@@ -113,34 +113,32 @@ fn translation<'a, I>(input: I) -> ParseResult<(bool, Translation), I>
 
     let msgid = section(bytes(b"msgid")).skip(newline());
 
-    msgid.then(move |((obs, _), msgid)| {
-        let msgid_plural = try(parser(obsolete).and(bytes(b"msgid_plural")))
-            .skip(skip_many1(space()))
-            .and(parser(multiline_str))
-            .skip(newline());
+    let msgid_plural = try(parser(obsolete).and(bytes(b"msgid_plural")))
+        .skip(skip_many1(space()))
+        .and(parser(multiline_str))
+        .skip(newline());
 
-        let msgstr_plural = parser(obsolete)
-            .and(
-                bytes(b"msgstr")
-                    .with(
-                        between(
-                            token(b'[') , token(b']'),
-                            many1(digit())
-                                .and_then(|s| String::from_utf8(s))
-                                .and_then(|s| s.parse())))
-            )
-            .skip(skip_many1(space()))
-            .and(parser(multiline_str))
-            .skip(newline())
-            .map(|((_, n), s)| (n, s));
+    let msgstr_plural = parser(obsolete)
+        .and(
+            bytes(b"msgstr")
+                .with(
+                    between(
+                        token(b'[') , token(b']'),
+                        many1(digit())
+                            .and_then(|s| String::from_utf8(s))
+                            .and_then(|s| s.parse())))
+        )
+        .skip(skip_many1(space()))
+        .and(parser(multiline_str))
+        .skip(newline())
+        .map(|((_, n), s)| (n, s));
 
-        let msgstr = section(bytes(b"msgstr"));
+    let msgstr = section(bytes(b"msgstr"));
 
-        let msgid2 = msgid.clone();
+    msgid.and(
         msgid_plural.and(many1(msgstr_plural))
             .map(move |(msgid_plural, msgstr_plurals)| {
                 Translation::Plural {
-                    msgid: msgid.clone(),
                     msgid_plural: msgid_plural.1,
                     msgstr: msgstr_plurals,
                 }
@@ -148,13 +146,13 @@ fn translation<'a, I>(input: I) -> ParseResult<(bool, Translation), I>
             .or(
                 msgstr.map(move |(_, msgstr)| {
                     Translation::Singular {
-                        msgid: msgid2.clone(),
                         msgstr: msgstr,
                     }
                 })
             )
-            .map(move |t| (obs, t))
-    }).parse_stream(input)
+        )
+        .map(|(((obs, _), msgid), t)| (obs, msgid, t))
+        .parse_stream(input)
 }
 
 pub fn entry<'a, I>(input: I) -> ParseResult<Entry, I>
@@ -166,12 +164,13 @@ pub fn entry<'a, I>(input: I) -> ParseResult<Entry, I>
         .skip(newline());
 
     (spaces(), parser(comments), optional(msgctxt), parser(translation))
-        .map(|(_, comments, msgctxt, (obs, trans))| {
+        .map(|(_, comments, msgctxt, (obs, msgid, trans))| {
             Entry {
-                translation: trans,
-                msgctxt: msgctxt,
-                comments: comments,
                 obsolete: obs,
+                comments: comments,
+                msgctxt: msgctxt,
+                msgid: msgid,
+                translation: trans,
             }
         })
         .parse_stream(input)
@@ -217,7 +216,8 @@ mod tests {
                     msgstr \"\"".as_bytes());
         let exp = Entry {
             msgctxt: None,
-            translation: Translation::Singular { msgid: "fo\"ob\nar".to_string(), msgstr: "".to_string() },
+            msgid: "fo\"ob\nar".to_string(),
+            translation: Translation::Singular { msgstr: "".to_string() },
             comments: vec![],
             obsolete: false,
         };
@@ -233,7 +233,8 @@ mod tests {
                    msgstr \"\"".as_bytes());
         let exp = Entry {
             msgctxt: None,
-            translation: Translation::Singular { msgid: "foobar".to_string(), msgstr: "".to_string() },
+            msgid: "foobar".to_string(),
+            translation: Translation::Singular { msgstr: "".to_string() },
             comments: vec![],
             obsolete: false,
         };
@@ -253,7 +254,8 @@ mod tests {
             msgstr \"\"".as_bytes());
         let exp = Entry {
             msgctxt: None,
-            translation: Translation::Singular { msgid: "".to_string(), msgstr: "".to_string() },
+            msgid: "".to_string(),
+            translation: Translation::Singular { msgstr: "".to_string() },
             obsolete: false,
             comments: vec![
                 Comment::Translator("a comment".to_string()),
@@ -277,7 +279,8 @@ mod tests {
             #~ msgstr \"\"".as_bytes());
         let exp = Entry {
             msgctxt: None,
-            translation: Translation::Singular { msgid: "".to_string(), msgstr: "".to_string() },
+            msgid: "".to_string(),
+            translation: Translation::Singular { msgstr: "".to_string() },
             obsolete: true,
             comments: vec![
                 Comment::Translator("a".to_string()),

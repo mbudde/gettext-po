@@ -8,20 +8,19 @@ mod parser;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Entry {
-    pub msgctxt: Option<String>,
-    pub translation: Translation,
-    pub comments: Vec<Comment>,
     pub obsolete: bool,
+    pub comments: Vec<Comment>,
+    pub msgctxt: Option<String>,
+    pub msgid: String,
+    pub translation: Translation,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Translation {
     Singular {
-        msgid: String,
         msgstr: String,
     },
     Plural {
-        msgid: String,
         msgid_plural: String,
         msgstr: Vec<(u32, String)>,
     }
@@ -114,16 +113,14 @@ impl Display for Entry {
             write_obsolete!(self, f, "msgctxt ")?;
             write_multiline_str(f, msgctxt, self.obsolete)?;
         }
+        write_obsolete!(self, f, "msgid ")?;
+        write_multiline_str(f, &self.msgid, self.obsolete)?;
         match self.translation {
-            Translation::Singular { ref msgid, ref msgstr } => {
-                write_obsolete!(self, f, "msgid ")?;
-                write_multiline_str(f, msgid, self.obsolete)?;
+            Translation::Singular { ref msgstr } => {
                 write_obsolete!(self, f, "msgstr ")?;
                 write_multiline_str(f, msgstr, self.obsolete)
             }
-            Translation::Plural { ref msgid, ref msgid_plural, ref msgstr } => {
-                write_obsolete!(self, f, "msgid ")?;
-                write_multiline_str(f, msgid, self.obsolete)?;
+            Translation::Plural { ref msgid_plural, ref msgstr } => {
                 write_obsolete!(self, f, "msgid_plural ")?;
                 write_multiline_str(f, msgid_plural, self.obsolete)?;
                 for &(i, ref msg) in msgstr {
