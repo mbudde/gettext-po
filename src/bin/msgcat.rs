@@ -1,18 +1,16 @@
 extern crate gettext_po;
 extern crate combine;
 
-use combine::primitives::State;
-use std::io::{Read};
-
+use std::io::Read;
 
 fn main() {
     let mut content = Vec::new();
     std::io::stdin().read_to_end(&mut content).unwrap();
 
-    let result = gettext_po::entries(State::new(&content[..]));
+    let result = gettext_po::parse(&content[..]);
 
     match result {
-        Ok((mut entries, _)) => {
+        Ok(mut entries) => {
             entries.sort_by_key(|e| e.obsolete as u8);
             let mut first = true;
             for entry in entries {
@@ -24,7 +22,7 @@ fn main() {
             }
         }
         Err(err) => {
-            println!("{:?}", err.into_inner());
+            println!("{}", err);
         }
     }
 
