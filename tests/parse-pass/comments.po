@@ -1,0 +1,7 @@
+#asas&[|£$}]\«»·df       asdf        
+#    asas&[|£$}]\«»·df       asdf        
+#.   asas&[|£$}]\«»·df       asdf        
+#:asas&[|£$}]\«»·df       asdf        
+#,c-format
+msgid "foo"
+msgstr "bar"

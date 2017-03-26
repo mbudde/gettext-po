@@ -1,0 +1,11 @@
+
+msgctxt "foo"
+msgid "Plural"
+msgid_plural "Plurals"
+msgstr[0] "Flertal"
+msgstr[1] "Flertals"
+
+msgid "Plural2"
+msgid_plural "Plurals2"
+msgstr[0] "Flertal"
+

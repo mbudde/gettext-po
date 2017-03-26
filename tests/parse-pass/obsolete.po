@@ -1,0 +1,4 @@
+# foo
+#~ #, c-format
+#~ msgid "Graaduate programmer"
+#~ msgstr "Graduate programmer"
