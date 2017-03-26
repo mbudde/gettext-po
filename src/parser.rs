@@ -8,12 +8,13 @@ use ::{Entry, Comment, Translation};
 fn quoted_str<I>(input: I) -> ParseResult<String, I>
     where I: Stream<Item=u8>
 {
-    const ESCAPES: &'static str = "n\"\\";
+    const ESCAPES: &'static str = "nt\"\\";
 
     let escape = token(b'\\')
         .with(one_of(ESCAPES.bytes()))
         .map(|c| match c {
             b'n' => b'\n',
+            b't' => b'\t',
             c => c,
         });
 
