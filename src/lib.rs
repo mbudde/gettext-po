@@ -1,3 +1,19 @@
+//! Parser for the [gettext PO file format].
+//!
+//! The parser currently supports the following features of the PO file format:
+//!
+//! - Plural translations
+//! - Message context
+//! - Different comment types (*translator*, *extracted*, *reference*, *flag*)
+//!
+//! The parser does not yet support:
+//!
+//! - Previous untranslated strings (`#| msgid` and `#| msgid_plural`)
+//! - Previous message context (`#| msgctxt`)
+//! - Non-UTF8 encoded files
+//!
+//! [gettext PO file format]: https://www.gnu.org/software/gettext/manual/html_node/PO-Files.html
+
 #[macro_use] extern crate combine;
 
 use std::fmt::{self, Display, Write};
@@ -6,15 +22,37 @@ use combine::State;
 
 mod parser;
 
+/// A PO-file message entry
 #[derive(Debug, PartialEq, Eq)]
 pub struct Message {
+    /// True if this entry is marked obsolete (prefixed with `#~`)
     pub obsolete: bool,
+
+    /// Comments attached to this message
     pub comments: Vec<Comment>,
+
+    /// Optional message context
     pub msgctxt: Option<String>,
+
+    /// The message id
     pub msgid: String,
+
+    /// The translation of the message id
     pub translation: Translation,
 }
 
+impl Message {
+    /// Returns true if this message entry is a [header entry].
+    ///
+    /// [header entry]: https://www.gnu.org/software/gettext/manual/html_node/Header-Entry.html
+    pub fn is_header(&self) -> bool {
+        self.msgid.is_empty()
+    }
+}
+
+/// The translation of the message
+///
+/// For plural translations this also includes the plural version of the `msgid`.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Translation {
     Singular {
@@ -133,6 +171,7 @@ impl Display for Message {
     }
 }
 
+/// Parse a byte slice into a vector of messages.
 pub fn parse(content: &[u8]) -> Result<Vec<Message>, String> {
     parser::entries(State::new(&content[..]))
         .map(|(entries, _)| entries)

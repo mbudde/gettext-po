@@ -2,6 +2,7 @@
 name = "gettext-po"
 version = "0.1.0"
 authors = ["Michael Budde <mbudde@gmail.com>"]
+description = "Parse Gettext PO files"
 
 [dependencies]
 combine = "2.3"
