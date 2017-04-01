@@ -3,7 +3,7 @@ use combine::combinator::*;
 use combine::byte::*;
 use combine::primitives::{Stream, ParseResult, Parser};
 
-use ::{Entry, Comment, Translation};
+use ::{Message, Comment, Translation};
 
 fn quoted_str<I>(input: I) -> ParseResult<String, I>
     where I: Stream<Item=u8>
@@ -156,7 +156,7 @@ fn translation<'a, I>(input: I) -> ParseResult<(bool, String, Translation), I>
         .parse_stream(input)
 }
 
-pub fn entry<'a, I>(input: I) -> ParseResult<Entry, I>
+pub fn entry<'a, I>(input: I) -> ParseResult<Message, I>
     where I: Stream<Item=u8, Range=&'a [u8]>
 {
     let msgctxt = try(parser(obsolete).skip(try(bytes(b"msgctxt"))))
@@ -166,7 +166,7 @@ pub fn entry<'a, I>(input: I) -> ParseResult<Entry, I>
 
     (spaces(), parser(comments), optional(msgctxt), parser(translation))
         .map(|(_, comments, msgctxt, (obs, msgid, trans))| {
-            Entry {
+            Message {
                 obsolete: obs,
                 comments: comments,
                 msgctxt: msgctxt,
@@ -177,7 +177,7 @@ pub fn entry<'a, I>(input: I) -> ParseResult<Entry, I>
         .parse_stream(input)
 }
 
-pub fn entries<'a, I>(input: I) -> ParseResult<Vec<Entry>, I>
+pub fn entries<'a, I>(input: I) -> ParseResult<Vec<Message>, I>
     where I: Stream<Item=u8, Range=&'a [u8]>
 {
     sep_end_by(parser(entry), newline().and(spaces()))
@@ -215,7 +215,7 @@ mod tests {
         let res = parser(entry)
             .parse("msgid   \"fo\\\"ob\\nar\"\n\
                     msgstr \"\"".as_bytes());
-        let exp = Entry {
+        let exp = Message {
             msgctxt: None,
             msgid: "fo\"ob\nar".to_string(),
             translation: Translation::Singular { msgstr: "".to_string() },
@@ -232,7 +232,7 @@ mod tests {
                    \"foo\"\n\
                    \"bar\"\n\
                    msgstr \"\"".as_bytes());
-        let exp = Entry {
+        let exp = Message {
             msgctxt: None,
             msgid: "foobar".to_string(),
             translation: Translation::Singular { msgstr: "".to_string() },
@@ -253,7 +253,7 @@ mod tests {
             #,    flag1\tflag2   \n\
             msgid \"\"\n\
             msgstr \"\"".as_bytes());
-        let exp = Entry {
+        let exp = Message {
             msgctxt: None,
             msgid: "".to_string(),
             translation: Translation::Singular { msgstr: "".to_string() },
@@ -278,7 +278,7 @@ mod tests {
             # c\n\
             #~ msgid \"\"\n\
             #~ msgstr \"\"".as_bytes());
-        let exp = Entry {
+        let exp = Message {
             msgctxt: None,
             msgid: "".to_string(),
             translation: Translation::Singular { msgstr: "".to_string() },

@@ -7,7 +7,7 @@ use combine::State;
 mod parser;
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Entry {
+pub struct Message {
     pub obsolete: bool,
     pub comments: Vec<Comment>,
     pub msgctxt: Option<String>,
@@ -104,7 +104,7 @@ macro_rules! write_obsolete {
     }
 }
 
-impl Display for Entry {
+impl Display for Message {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         for comment in &self.comments {
             write!(f, "{}\n", comment)?;
@@ -133,7 +133,7 @@ impl Display for Entry {
     }
 }
 
-pub fn parse(content: &[u8]) -> Result<Vec<Entry>, String> {
+pub fn parse(content: &[u8]) -> Result<Vec<Message>, String> {
     parser::entries(State::new(&content[..]))
         .map(|(entries, _)| entries)
         .map_err(|err| format!("{:?}", err))
