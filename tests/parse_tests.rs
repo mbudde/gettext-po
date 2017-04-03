@@ -25,7 +25,9 @@ fn po_files_in_dir(path: &str) -> Box<Iterator<Item=(PathBuf, Vec<u8>)>> {
 fn parse_pass() {
     for (path, content) in po_files_in_dir("tests/parse-pass") {
         println!("Parsing expecting success: {:?}", path);
-        assert!(gettext_po::parse(&content[..]).is_ok());
+        let res = gettext_po::parse(&content[..]);
+        println!("{:?}", res);
+        assert!(res.is_ok());
     }
 }
 
@@ -33,6 +35,8 @@ fn parse_pass() {
 fn parse_fail() {
     for (path, content) in po_files_in_dir("tests/parse-fail") {
         println!("Parsing expecting error: {:?}", path);
-        assert!(gettext_po::parse(&content[..]).is_err());
+        let res = gettext_po::parse(&content[..]);
+        println!("{:?}", res);
+        assert!(res.is_err());
     }
 }
